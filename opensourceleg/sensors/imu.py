@@ -1207,7 +1207,7 @@ class BHI260AP(IMUBase):
         if transfer_len <= 0:
             return b""
 
-        chunk_size = 4000
+        chunk_size = 4094
         fifo_data = []
         bytes_read = 0
 
