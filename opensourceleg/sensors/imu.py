@@ -1208,7 +1208,7 @@ class BHI260AP(IMUBase):
             return b""
 
         chunk_size = 4094
-        fifo_data = []
+        fifo_data: list[int] = []
         bytes_read = 0
 
         while bytes_read < transfer_len:
