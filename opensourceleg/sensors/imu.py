@@ -1203,10 +1203,23 @@ class BHI260AP(IMUBase):
         """
         length_bytes = self._read_register(address, 2)
         transfer_len = struct.unpack("<H", bytes(length_bytes))[0]
-        if transfer_len > 0:
-            fifo_data = self._read_register(address, transfer_len)
-            return bytes(fifo_data)
-        return b""
+
+        if transfer_len <= 0:
+            return b""
+
+        chunk_size = 4094
+        fifo_data: list[int] = []
+        bytes_read = 0
+
+        while bytes_read < transfer_len:
+            remaining_bytes = transfer_len - bytes_read
+            current_chunk_size = min(remaining_bytes, chunk_size)
+
+            chunk = self._read_register(address, current_chunk_size)
+            fifo_data.extend(chunk)
+            bytes_read += current_chunk_size
+
+        return bytes(fifo_data)
 
     def _parse_fifo(self, fifo_data: bytes) -> list[dict]:  # noqa: C901
         """
