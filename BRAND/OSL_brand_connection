@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""
+OSL Controller Script with BRAND Socket Interface
+
+Receives joint position setpoints from the BRAND `osl` node via UDP, applies
+them to the Open Source Leg actuators, and sends actual joint positions back.
+
+Setpoints are accepted directly in the actuator output frame (radians) -- the
+BRAND node performs the 0-1 -> radian mapping via its `control_ranges`
+parameter, so we just clamp to a safety window and command the actuator.
+
+Use `--mode` to drive only the knee, only the ankle, or both simultaneously.
+The script only opens/homes the actuators required by the selected mode.
+
+Network protocol:
+    UDP msgpack on  --listen-port (default 9000)
+    UDP msgpack to  --brand-ip:--send-port (default 9001)
+
+Incoming payload (flat msgpack dict from the BRAND osl node):
+    { "knee": <rad>, "ankle_flexion": <rad>, ... }   (extra keys ignored)
+
+Outgoing payload (only active joints included):
+    { "knee": [rad], "ankle_flexion": [rad] }
+"""
+
+import argparse
+import socket
+import threading
+import time
+from contextlib import ExitStack
+from typing import Dict, List
+
+import msgpack
+import msgpack_numpy as m
+import numpy as np
+
+m.patch()
+
+from opensourceleg.actuators.base import CONTROL_MODES
+from opensourceleg.actuators.dephy import DephyActuator
+from opensourceleg.utilities import SoftRealtimeLoop
+
+# Edit these to change defaults without touching the CLI. The matching
+# --mode / --knee-port / --ankle-port flags still override at runtime.
+#   DEFAULT_MODE: "knee", "ankle", or "both"
+DEFAULT_MODE = "both"
+DEFAULT_KNEE_PORT = "/dev/ttyACM0"
+DEFAULT_ANKLE_PORT = "/dev/ttyACM1"
+
+BRAND_IP = "127.0.0.1"
+LISTEN_PORT = 9000
+SEND_PORT = 9001
+FREQUENCY = 200
+GEAR_RATIO = 9 * 83 / 18
+PRINT_INTERVAL_S = 0.1
+
+# Per-joint defaults. `payload_key` must match what the BRAND osl node sends
+# (configured via its `dof_mapping`). `safety_rad` is a hard clamp applied to
+# every commanded position to protect the hardware.
+JOINT_DEFAULTS = {
+    "knee": {
+        "payload_key": "knee",
+        "port": DEFAULT_KNEE_PORT,
+        "neutral_rad": 0.1,
+        "safety_rad": (0.0, 1.9),
+    },
+    "ankle": {
+        "payload_key": "ankle_flexion",
+        "port": DEFAULT_ANKLE_PORT,
+        "neutral_rad": 0.1,
+        "safety_rad": (-0.4, 1.2),
+    },
+}
+
+MODE_TO_JOINTS = {
+    "knee": ["knee"],
+    "ankle": ["ankle"],
+    "both": ["knee", "ankle"],
+}
+
+
+def extract_scalar(value) -> float | None:
+    if isinstance(value, np.ndarray):
+        return float(value.flat[0]) if value.size else None
+    if isinstance(value, (list, tuple)):
+        return float(value[0]) if value else None
+    if isinstance(value, (int, float, np.floating, np.integer)):
+        return float(value)
+    return None
+
+
+def main():
+    parser = argparse.ArgumentParser(description="OSL BRAND Controller")
+    parser.add_argument("--mode", default=DEFAULT_MODE, choices=list(MODE_TO_JOINTS),
+                        help=f"Which joints to drive (default: {DEFAULT_MODE})")
+    parser.add_argument("--brand-ip", default=BRAND_IP)
+    parser.add_argument("--listen-port", type=int, default=LISTEN_PORT)
+    parser.add_argument("--send-port", type=int, default=SEND_PORT)
+    parser.add_argument("--frequency", type=int, default=FREQUENCY)
+    parser.add_argument("--knee-port", default=JOINT_DEFAULTS["knee"]["port"])
+    parser.add_argument("--ankle-port", default=JOINT_DEFAULTS["ankle"]["port"])
+    args = parser.parse_args()
+
+    active: List[str] = MODE_TO_JOINTS[args.mode]
+    port_for = {"knee": args.knee_port, "ankle": args.ankle_port}
+    payload_key = {j: JOINT_DEFAULTS[j]["payload_key"] for j in active}
+    safety = {j: JOINT_DEFAULTS[j]["safety_rad"] for j in active}
+
+    setpoints: Dict[str, float] = {
+        j: JOINT_DEFAULTS[j]["neutral_rad"] for j in active
+    }
+    setpoints_lock = threading.Lock()
+    running = threading.Event()
+    running.set()
+
+    def reader_thread():
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", args.listen_port))
+        sock.settimeout(0.1)
+
+        while running.is_set():
+            try:
+                data, _ = sock.recvfrom(65535)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+            # Drain to the freshest packet so we never act on stale setpoints.
+            sock.setblocking(False)
+            try:
+                while True:
+                    data, _ = sock.recvfrom(65535)
+            except BlockingIOError:
+                pass
+            finally:
+                sock.settimeout(0.1)
+
+            try:
+                decoded = msgpack.unpackb(data)
+            except Exception:
+                continue
+            if not isinstance(decoded, dict):
+                continue
+
+            with setpoints_lock:
+                for joint in active:
+                    key = payload_key[joint]
+                    if key not in decoded:
+                        continue
+                    val = extract_scalar(decoded[key])
+                    if val is None:
+                        continue
+                    lo, hi = safety[joint]
+                    setpoints[joint] = float(np.clip(val, lo, hi))
+
+        sock.close()
+
+    threading.Thread(target=reader_thread, daemon=True).start()
+
+    send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    send_target = (args.brand_ip, args.send_port)
+
+    print(f"Active joints: {active}  (mode={args.mode})")
+    print(f"Listening on :{args.listen_port}, sending to {args.brand_ip}:{args.send_port}")
+
+    try:
+        with ExitStack() as stack:
+            actuators: Dict[str, DephyActuator] = {}
+            for joint in active:
+                actuator = DephyActuator(
+                    tag=joint,
+                    firmware_version="7.2.0",
+                    port=port_for[joint],
+                    gear_ratio=GEAR_RATIO,
+                    frequency=args.frequency,
+                )
+                stack.enter_context(actuator)
+                actuators[joint] = actuator
+
+            for joint, actuator in actuators.items():
+                print(f"Homing {joint}...")
+                actuator.home()
+            input("Homing complete. Press Enter to start...")
+
+            for actuator in actuators.values():
+                actuator.set_control_mode(CONTROL_MODES.POSITION)
+
+            clock = SoftRealtimeLoop(dt=1 / args.frequency)
+            last_print = 0.0
+
+            for _ in clock:
+                with setpoints_lock:
+                    targets = dict(setpoints)
+
+                positions: Dict[str, float] = {}
+                for joint, actuator in actuators.items():
+                    actuator.update()
+                    actuator.set_output_position(targets[joint])
+                    positions[joint] = float(actuator.output_position)
+
+                send_sock.sendto(
+                    msgpack.packb({
+                        payload_key[j]: [positions[j]] for j in active
+                    }),
+                    send_target,
+                )
+
+                now = time.monotonic()
+                if now - last_print >= PRINT_INTERVAL_S:
+                    last_print = now
+                    status = "  ".join(
+                        f"{j}: {positions[j]:+.3f} (cmd {targets[j]:+.3f})"
+                        for j in active
+                    )
+                    print(status, end="\r")
+    finally:
+        running.clear()
+        send_sock.close()
+        print("\nShutdown complete.")
+
+
+if __name__ == "__main__":
+    main()
