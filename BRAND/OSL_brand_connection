@@ -43,9 +43,9 @@ from opensourceleg.utilities import SoftRealtimeLoop
 # Edit these to change defaults without touching the CLI. The matching
 # --mode / --knee-port / --ankle-port flags still override at runtime.
 #   DEFAULT_MODE: "knee", "ankle", or "both"
-DEFAULT_MODE = "both"
-DEFAULT_KNEE_PORT = "/dev/ttyACM0"
-DEFAULT_ANKLE_PORT = "/dev/ttyACM1"
+DEFAULT_MODE = "ankle"
+DEFAULT_KNEE_PORT = "/dev/ttyACM1"
+DEFAULT_ANKLE_PORT = "/dev/ttyACM0"
 
 BRAND_IP = "127.0.0.1"
 LISTEN_PORT = 9000
@@ -186,6 +186,7 @@ def main():
 
             for actuator in actuators.values():
                 actuator.set_control_mode(CONTROL_MODES.POSITION)
+                actuator.set_position_gains()
 
             clock = SoftRealtimeLoop(dt=1 / args.frequency)
             last_print = 0.0
