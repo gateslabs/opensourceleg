@@ -33,7 +33,7 @@ LOADCELL_CALIBRATION_MATRIX_M3564F = np.array([
 ])
 
 # ------------- TUNABLE FSM PARAMETERS ---------------- #
-BODY_WEIGHT = 10 * 9.8
+BODY_WEIGHT = 20 * 9.8
 
 # STATE 1: EARLY STANCE
 ANKLE_K_ESTANCE = 19.874
@@ -225,7 +225,7 @@ if __name__ == "__main__":
 
         # ankle
         osl.ankle.set_control_mode(mode=CONTROL_MODES.IMPEDANCE)
-        osl.ankle.set_impedance_gains()
+        osl.ankle._set_impedance_gains()
 
         for t in clock:
             osl.update()
