@@ -45,7 +45,7 @@ WALK_INCLINE = 0 # deg [-10, 10]
 WALKING_SPEED = 0.6 # m/s [0.6, 1.4]
 STAIR_INCLINE = 19 # deg [19, 30]
 STAIR_ASCEND = True # True: going up stairs, False: going down stairs
-CONTROL_MODE = eControlMode.PEG # Selected mode for manual classification
+CONTROL_MODE = eControlMode.WALK # Selected mode for manual classification
 CLASSIFICATION_MODE = eClassificationMode.MANUAL # Automatic or manual control mode selection (Stair only available in manual)
 ENABLE_FRICTION_COMPENSATION = True
 
