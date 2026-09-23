@@ -28,7 +28,6 @@ import socket
 import threading
 import time
 from contextlib import ExitStack
-from typing import Dict, List
 
 import msgpack
 import msgpack_numpy as m
@@ -43,9 +42,9 @@ from opensourceleg.utilities import SoftRealtimeLoop
 # Edit these to change defaults without touching the CLI. The matching
 # --mode / --knee-port / --ankle-port flags still override at runtime.
 #   DEFAULT_MODE: "knee", "ankle", or "both"
-DEFAULT_MODE = "ankle"
-DEFAULT_KNEE_PORT = "/dev/ttyACM1"
-DEFAULT_ANKLE_PORT = "/dev/ttyACM0"
+DEFAULT_MODE = "both"
+DEFAULT_KNEE_PORT = "/dev/ttyACM0"
+DEFAULT_ANKLE_PORT = "/dev/ttyACM1"
 
 BRAND_IP = "127.0.0.1"
 LISTEN_PORT = 9000
@@ -61,14 +60,16 @@ JOINT_DEFAULTS = {
     "knee": {
         "payload_key": "knee",
         "port": DEFAULT_KNEE_PORT,
-        "neutral_rad": 0.1,
+        "neutral_rad": 1.48,  # ~85 deg bent
         "safety_rad": (0.0, 1.9),
+        "home_offset_rad": 0.0,  # knee hard stop = full extension = 0
     },
     "ankle": {
         "payload_key": "ankle_flexion",
         "port": DEFAULT_ANKLE_PORT,
-        "neutral_rad": 0.1,
+        "neutral_rad": 0.0,  # neutral
         "safety_rad": (-0.4, 1.2),
+        "home_offset_rad": 0.58,  # ~30 deg hard stop -> neutral (HKIC). VERIFY SIGN/MAG ON HARDWARE
     },
 }
 
@@ -91,8 +92,12 @@ def extract_scalar(value) -> float | None:
 
 def main():
     parser = argparse.ArgumentParser(description="OSL BRAND Controller")
-    parser.add_argument("--mode", default=DEFAULT_MODE, choices=list(MODE_TO_JOINTS),
-                        help=f"Which joints to drive (default: {DEFAULT_MODE})")
+    parser.add_argument(
+        "--mode",
+        default=DEFAULT_MODE,
+        choices=list(MODE_TO_JOINTS),
+        help=f"Which joints to drive (default: {DEFAULT_MODE})",
+    )
     parser.add_argument("--brand-ip", default=BRAND_IP)
     parser.add_argument("--listen-port", type=int, default=LISTEN_PORT)
     parser.add_argument("--send-port", type=int, default=SEND_PORT)
@@ -101,14 +106,12 @@ def main():
     parser.add_argument("--ankle-port", default=JOINT_DEFAULTS["ankle"]["port"])
     args = parser.parse_args()
 
-    active: List[str] = MODE_TO_JOINTS[args.mode]
+    active: list[str] = MODE_TO_JOINTS[args.mode]
     port_for = {"knee": args.knee_port, "ankle": args.ankle_port}
     payload_key = {j: JOINT_DEFAULTS[j]["payload_key"] for j in active}
     safety = {j: JOINT_DEFAULTS[j]["safety_rad"] for j in active}
 
-    setpoints: Dict[str, float] = {
-        j: JOINT_DEFAULTS[j]["neutral_rad"] for j in active
-    }
+    setpoints: dict[str, float] = {j: JOINT_DEFAULTS[j]["neutral_rad"] for j in active}
     setpoints_lock = threading.Lock()
     running = threading.Event()
     running.set()
@@ -167,7 +170,7 @@ def main():
 
     try:
         with ExitStack() as stack:
-            actuators: Dict[str, DephyActuator] = {}
+            actuators: dict[str, DephyActuator] = {}
             for joint in active:
                 actuator = DephyActuator(
                     tag=joint,
@@ -180,8 +183,9 @@ def main():
                 actuators[joint] = actuator
 
             for joint, actuator in actuators.items():
-                print(f"Homing {joint}...")
-                actuator.home()
+                off = JOINT_DEFAULTS[joint]["home_offset_rad"]
+                print(f"Homing {joint} (offset {off:+.3f} rad)...")
+                actuator.home(output_position_offset=off)
             input("Homing complete. Press Enter to start...")
 
             for actuator in actuators.values():
@@ -195,26 +199,21 @@ def main():
                 with setpoints_lock:
                     targets = dict(setpoints)
 
-                positions: Dict[str, float] = {}
+                positions: dict[str, float] = {}
                 for joint, actuator in actuators.items():
                     actuator.update()
                     actuator.set_output_position(targets[joint])
                     positions[joint] = float(actuator.output_position)
 
                 send_sock.sendto(
-                    msgpack.packb({
-                        payload_key[j]: [positions[j]] for j in active
-                    }),
+                    msgpack.packb({payload_key[j]: [positions[j]] for j in active}),
                     send_target,
                 )
 
                 now = time.monotonic()
                 if now - last_print >= PRINT_INTERVAL_S:
                     last_print = now
-                    status = "  ".join(
-                        f"{j}: {positions[j]:+.3f} (cmd {targets[j]:+.3f})"
-                        for j in active
-                    )
+                    status = "  ".join(f"{j}: {positions[j]:+.3f} (cmd {targets[j]:+.3f})" for j in active)
                     print(status, end="\r")
     finally:
         running.clear()
