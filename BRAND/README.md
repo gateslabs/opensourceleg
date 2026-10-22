@@ -6,6 +6,8 @@ The Raspberry Pi reads live Hi-Res EMG straight from the Ripple Explorer Summit 
 
 ## Experiment-day quick start
 
+> **For the ankle DMC sessions, follow `NOTEBOOK.md` instead** (section C, or section F for the browser GUI: `./summit_live.sh S01` on the Pi, then `./laptop_connect.sh gui` on the laptop). The steps below are the original generic stream test.
+
 1. **Summit:** power it on and check that its WiFi network `R04500-0094-WIFI` is visible. If it isn't, see _WiFi is off_ in Troubleshooting.
 2. **Laptop:** join `R04500-0094-WIFI`. Open Trellis and set Network to **Wireless** and Mode to **TCP**. Turn on **Hi-Res only** (Raw, LFP and Spike off), then check the signals.
 3. **Pi:** make sure it's on the Summit's network (see _Moving the Pi between networks_), then SSH in from the laptop:
