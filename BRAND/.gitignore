@@ -1,0 +1,14 @@
+# Subject data and session output stay on the Pi (IRB; also large). Copy them off with scp
+# or the GUI's Files panel. Code, NOTEBOOK.md and README.md are what goes in git.
+*.xipp
+*.expp
+*.npz
+*_session.txt
+*_cal[0-9]*.json
+*_dmc_cal.json
+*_dmc.csv
+DataLog/
+nohup.out
+gui_settings.json
+# the paper (copyrighted PDF)
+*.pdf
