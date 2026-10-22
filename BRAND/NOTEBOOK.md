@@ -42,13 +42,33 @@ Summit (GAS + TA EMG, 2 kHz) --WiFi/TCP--> Pi: dmc_controller.py --UDP 9000--> P
 - [x] **Stream check:** passed 2026-10-22 (S01_check). WiFi password works too.
 - [x] **Find the channels:** TA = `1-2`, GAS = `3-4`, bipolar (S01_chan, 2026-10-22).
 - [x] **Direction (`PF_SIGN`):** −1, verified on the bench 2026-10-22.
-- [ ] **Bench test, stiffer spring** (section D): K 60 (then 120 if needed) until relaxing returns the ankle to within about 1° of neutral; then the stale fallback and the e-stop.
-- [ ] **First session with the GUI** (section F), on the bench.
-- [ ] **Optional:** the one-line sudo rule (section F) so the GUI's WiFi buttons work.
+      Next bench session (leg off the body, e-stop in hand), in this order:
+
+- [ ] **First session with the GUI** (section F). Only tested against fake programs so far; check that each button does what it says.
+- [ ] **Neutral after homing** (section D.1): spring engaged, nothing sent → ankle reads about 0° and the foot sits at 90°. The ankle zero offset (`home_offset_rad` 0.5236) is still **unverified**, and all three 2026-10-22 runs started about 6° off neutral (friction or a wrong offset: check now that the spring is stiffer).
+- [ ] **Stiffer spring** (section D.1a): K 60 (then 120 / b 3 if needed) until relaxing returns the ankle to within about 1° of neutral (GUI: _off neutral at rest_).
+- [ ] **Calibration check:** GAS and TA MVA should be around 200 µV (19:03 and 19:06 runs). If one prints far lower, as GAS did at 19:17 (64 µV, m_GAS 47), redo the calibration.
+- [ ] **Stale fallback** (section D.4): switch Trellis's Hi-Res off for a moment; the ankle eases back to neutral and the log shows `stale`.
+- [ ] **E-stop** (section D.5).
 - [x] **Git:** `brand-dmc` merged into `main` 2026-10-22 (section G).
-- [ ] **Watchdog (decision pending):** decide whether to add a packet timeout to `OSL_brand_connection_impedance.py`. Today it holds the last setpoint if the controller dies.
+
+Decisions:
+
+- [ ] **Watchdog (decision pending; recommended before any worn session):** add a packet timeout to `OSL_brand_connection_impedance.py` so the ankle returns to neutral if commands stop. Today it holds the last setpoint if the controller dies.
+- [ ] **Optional:** the one-line sudo rule (section F) so the GUI's WiFi buttons work.
+
+Before the first worn session:
+
 - [ ] **Fixed delay:** measure it with `summit_latency.py` (bench only, see README).
-- [ ] **First worn session:** follow section C, under the IRB protocol.
+- [ ] **Subject weight:** fill in _Session settings_ below; the worn spring is K = 2.865 × kg (`./summit_live.sh S01 <kg>` or GUI _Worn_).
+- [ ] **First worn session:** follow section C (or F), under the IRB protocol.
+
+Housekeeping (any time):
+
+- [ ] Delete `~/git_empty_objects_backup_20261022/` (the 9 empty git files moved out on 2026-10-22; useless now).
+- [ ] Delete the merged branch `brand-dmc` on GitHub (`git push origin --delete brand-dmc`), if nobody else uses it.
+
+Outside this project, still open: the HKIC controller's friction compensation has its own hardcoded torque constant (`kt = 0.11`, with `fc` / `fg`) that wasn't changed when the library constant became 0.145 Nm/A (2026-07-20); waiting on Kevin Best / Elissa Cimino about whether to change it.
 
 ## Session settings (fill in)
 
@@ -120,7 +140,7 @@ The laptop joins the Summit's network too and you SSH to the Pi through it. Only
 - relax 3 s
 - TOES UP 3 s: pull as hard as you can
 
-It prints rest, MVA and the slopes (paper: m_GAS 1.5–5, m_TA 0.01–0.63). If it fails it says why and you redo it.
+It prints rest, MVA and the slopes (paper: m_GAS 1.5–5, m_TA 0.01–0.63). If it fails it says why and you redo it. Also redo it (`c`, or GUI _Recalibrate_) if an MVA is far below the usual ~200 µV: on 2026-10-22 a weak toes-down push gave GAS 64 µV and m_GAS 47.
 
 **7. Trials, from the menu:**
 
