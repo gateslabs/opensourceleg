@@ -42,7 +42,8 @@ Summit (GAS + TA EMG, 2 kHz) --WiFi/TCP--> Pi: dmc_controller.py --UDP 9000--> P
 - [x] **Stream check:** passed 2026-10-22 (S01_check). WiFi password works too.
 - [x] **Find the channels:** TA = `1-2`, GAS = `3-4`, bipolar (S01_chan, 2026-10-22).
 - [x] **Direction (`PF_SIGN`):** −1, verified on the bench 2026-10-22.
-      Next bench session (leg off the body, e-stop in hand), in this order:
+
+Next bench session (leg off the body, e-stop in hand), in this order:
 
 - [ ] **First session with the GUI** (section F). Only tested against fake programs so far; check that each button does what it says.
 - [ ] **Neutral after homing** (section D.1): spring engaged, nothing sent → ankle reads about 0° and the foot sits at 90°. The ankle zero offset (`home_offset_rad` 0.5236) is still **unverified**, and all three 2026-10-22 runs started about 6° off neutral (friction or a wrong offset: check now that the spring is stiffer).
@@ -140,7 +141,7 @@ The laptop joins the Summit's network too and you SSH to the Pi through it. Only
 - relax 3 s
 - TOES UP 3 s: pull as hard as you can
 
-It prints rest, MVA and the slopes (paper: m_GAS 1.5–5, m_TA 0.01–0.63). If it fails it says why and you redo it. Also redo it (`c`, or GUI _Recalibrate_) if an MVA is far below the usual ~200 µV: on 2026-10-22 a weak toes-down push gave GAS 64 µV and m_GAS 47.
+It prints rest, MVA and the slopes (paper: m*GAS 1.5–5, m_TA 0.01–0.63). If it fails it says why and you redo it. Also redo it (`c`, or GUI \_Recalibrate*) if an MVA is far below the usual ~200 µV: on 2026-10-22 a weak toes-down push gave GAS 64 µV and m_GAS 47.
 
 **7. Trials, from the menu:**
 
